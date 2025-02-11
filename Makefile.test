@@ -1,0 +1,48 @@
+XBE_TITLE = LithiumX
+GEN_XISO = $(XBE_TITLE).iso
+NXDK_SDL = y
+NXDK_NET = y
+
+GIT_COMMIT_HASH := "$(shell git describe --abbrev=7 --always)"
+
+LVGL_DIR = src/libs/lvgl
+LV_CONF_PATH = "lv_conf.h"
+
+# Include my files
+SRCS += \
+    $(CURDIR)/test/main.c \
+    $(CURDIR)/src/libs/nxdk/lib/net/lwip/src/apps/http/http_client.c \
+    $(CURDIR)/src/libs/nxdk/lib/net/lwip/src/apps/altcp_tls/altcp_tls_mbedtls.c \
+	$(CURDIR)/src/libs/nxdk/lib/net/lwip/src/apps/altcp_tls/altcp_tls_mbedtls_mem.c
+
+CFLAGS += \
+    -I$(CURDIR)/src \
+    -I$(CURDIR)/src \
+    -I$(CURDIR)/src/libs/mbedtls/include \
+    -DLV_LVGL_H_INCLUDE_SIMPLE -DLV_CONF_PATH=$(LV_CONF_PATH) \
+    -DWIN32 \
+    -DBUILD_VERSION=\"$(GIT_COMMIT_HASH)\" \
+    -DSDL_DISABLE_JOYSTICK_INIT_DELAY \
+    -DLVGL_USE_CUSTOM_CONTROLLER_MAP \
+    -DLVGL_USE_CUSTOM_KEYBOARD_MAP \
+    -DFTP_CUSTOM_ROOT_PATH \
+    -DSNTP_SET_SYSTEM_TIME=xbox_sntp_set_time \
+    -DSNTP_SERVER_DNS=1 \
+    -Wno-implicit-function-declaration \
+    -DMEMP_NUM_NETBUF=6 -DMEMP_NUM_NETCONN=6 \
+    -DDEBUG_CONSOLE \
+    -DNDEBUG \
+    -O2
+
+# Include shaders
+%.inl: %.ps | fp20compiler
+	@echo "[ FP20     ] $@"
+	$(FP20COMPILER) $< > $@
+
+include $(NXDK_DIR)/Makefile
+
+main.exe: src/libs/mbedtls/build/library/libmbedtls.lib src/libs/mbedtls/build/library/libmbedx509.lib src/libs/mbedtls/build/library/libmbedcrypto.lib
+
+clean_local:
+	find . -name '*.obj' ! -path './libs/nxdk/*' -type f -delete
+	find . -name '*.d' ! -path './libs/nxdk/*' -type f -delete
