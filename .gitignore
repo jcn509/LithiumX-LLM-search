@@ -10,3 +10,4 @@ dash.xml
 *.exe
 *.iso
 *.inl
+src/gemini_api_key.h

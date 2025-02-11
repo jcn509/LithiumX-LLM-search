@@ -4,3 +4,9 @@
 [submodule "src/lib/nxdk"]
 	path = src/libs/nxdk
 	url = https://github.com/Ryzee119/nxdk.git
+[submodule "src/libs/mbedtls"]
+	path = src/libs/mbedtls
+	url = https://github.com/jcn509/mbedtls.git
+[submodule "src/libs/nxdk-mbedtls"]
+	path = src/libs/nxdk-mbedtls
+	url = https://github.com/thrimbor/nxdk-mbedtls.git
