@@ -10,3 +10,6 @@
 [submodule "src/libs/nxdk-mbedtls"]
 	path = src/libs/nxdk-mbedtls
 	url = https://github.com/thrimbor/nxdk-mbedtls.git
+[submodule "src/libs/json"]
+	path = src/libs/json
+	url = https://github.com/nlohmann/json.git

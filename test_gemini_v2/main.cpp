@@ -1,18 +1,28 @@
 #define _CRT_RAND_S
 
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
+
+#include <string>
+#include <string_view>
+
+// Needs to be included before lwip due to macros defined in lwip
+#include "nlohmann/json.hpp"
 
 #include <hal/debug.h>
 #include <hal/video.h>
 #include <nxdk/net.h>
 
 #include <lwip/netdb.h>
+#include <lwip/sys.h>
 #include <lwip/sockets.h>
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>
 #include <mbedtls/error.h>
 #include <mbedtls/net_sockets.h>
+
+#include <xboxkrnl/xboxkrnl.h>
 
 #include "gemini_api_key.h"
 
@@ -50,6 +60,80 @@ static const char ca_cert[] =
 "2tIMPNuzjsmhDYAPexZ3FL//2wmUspO8IFgV6dtxQ/PeEMMA3KgqlbbC1j+Qa3bb\n"
 "bP6MvPJwNQzcmRk13NfIRmPVNnGuV/u3gm3c\n"
 "-----END CERTIFICATE-----\n";
+
+
+std::string extract_ai_response_from_http_response(const std::string& response) {
+    // Get response body
+    // TODO: do we really need a copy?
+    // Response is JSON and I don't expect to see a { before it
+    // TODO: this is a mess!
+    const size_t index_of_json_in_response = response.find("{");
+    const std::string_view response_body_json_str(
+        response.c_str() + index_of_json_in_response,
+        // +8 because there is some garbage after the JSON
+        // that will stop us from being able to parse it
+        response.size() - (index_of_json_in_response + 8)
+    );
+    debugPrint("going to parse the json\n");
+    auto parsed_json = nlohmann::json::parse(response_body_json_str, nullptr, false);
+    if(parsed_json.is_discarded()) {
+        debugPrint("parsed json discarded\n");
+    }
+    debugPrint("Parsed the json\n");
+    auto candidates = parsed_json["candidates"];
+    debugPrint("candidates\n");
+    if(candidates.is_discarded()) {
+        debugPrint("candidates json discarded\n");
+    }
+    if(candidates.is_null()) {
+        debugPrint("candidates json null\n");
+    }
+    //candidates.is_object
+    auto candidate_1 = candidates[0];
+    debugPrint("candidate_1\n");
+    if(candidate_1.is_discarded()) {
+        debugPrint("candidate_1 json discarded\n");
+    }
+    if(candidate_1.is_null()) {
+        debugPrint("candidate_1 json null\n");
+    }
+    auto content = candidate_1["content"];
+    debugPrint("content\n");
+    if(content.is_discarded()) {
+        debugPrint("content json discarded\n");
+    }
+    if(content.is_null()) {
+        debugPrint("content json null\n");
+    }
+    auto parts = content["parts"];
+    debugPrint("parts\n");
+    if(parts.is_discarded()) {
+        debugPrint("parts json discarded\n");
+    }
+    if(parts.is_null()) {
+        debugPrint("parts json null\n");
+    }
+    auto part_1 = parts[0];
+    debugPrint("part_1\n");
+    if(part_1.is_discarded()) {
+        debugPrint("part_1 json discarded\n");
+    }
+    if(part_1.is_null()) {
+        debugPrint("part_1 json null\n");
+    }
+    auto text = part_1["text"];
+    debugPrint("text\n");
+    if(text.is_discarded()) {
+        debugPrint("text json discarded\n");
+    }
+    if(text.is_null()) {
+        debugPrint("text json null\n");
+    }
+    if(text.is_string()) {
+        debugPrint("text is string\n");
+    }
+    return text;
+}
 
 // BEGIN: Glue code provided by Thrimbor
 int custom_mbedtls_net_send( void *ctx, const unsigned char *buf, size_t len )
@@ -113,7 +197,7 @@ static inline size_t min (size_t a, size_t b)
     return (a < b) ? a : b;
 }
 
-int mbedtls_hardware_poll (void *data, unsigned char *output, size_t len, size_t *olen) {
+extern "C" int mbedtls_hardware_poll (void *data, unsigned char *output, size_t len, size_t *olen) {
     size_t written = 0;
     while (written < len) {
         uint32_t buf;
@@ -162,13 +246,14 @@ void make_gemini_request(const char* const prompt) {
     const size_t total_json_size = (sizeof(prompt_json_begin) -1) + strlen(prompt) + (sizeof(prompt_json_end) -1);
     // Currently making the dangerous assumption that the prompt contains no characters
     // that need to be escaped...
+    // TODO: use json library to construct the prompt
 
     char request[1000];
     char error_buf[100];
     int ret;
     sprintf(
         request,
-        "POST /v1beta/models/gemini-1.5-flash:generateContent?key=%s"                      
+        "POST /v1beta/models/gemini-2.5-flash:generateContent?key=%s"                      
         " HTTP/1.1\r\n" 
         "Host: %s\r\n" 
         "Connection: close\r\n"
@@ -270,16 +355,28 @@ void make_gemini_request(const char* const prompt) {
     }
 
     // Read response
-    unsigned char buf[128];
+    std::string response;
     do {
-        ret = mbedtls_ssl_read(&ssl, buf, sizeof(buf) - 1);
-        if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
-        if (ret <= 0) break;
-
-        buf[ret] = '\0';
-        debugPrint("%s", buf);
-        Sleep(1000);
+        char response_buf[128];
+        const int read_rv = mbedtls_ssl_read(&ssl, reinterpret_cast<unsigned char*>(response_buf), sizeof(response_buf) - 1);
+        if (read_rv == MBEDTLS_ERR_SSL_WANT_READ || read_rv == MBEDTLS_ERR_SSL_WANT_WRITE) {
+            continue;
+        }
+        if (read_rv <= 0) {
+            break;
+        }
+        response.append(response_buf, read_rv);
     } while (1);
+
+    const std::string ai_response = extract_ai_response_from_http_response(response);
+    Sleep(2000);
+    for(const char c: ai_response) {
+        char out[2];
+        out[0] = c;
+        out[1] = '\0';
+        debugPrint(out);
+        Sleep(50);
+    }
 
     if (ret < 0 && ret != MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
         mbedtls_strerror(ret, error_buf, sizeof(error_buf));
@@ -310,7 +407,7 @@ int main(void) {
         while (1) NtYieldExecution();
     }
 
-    debugPrint("NXDK HTTPS test!\n");
+    debugPrint("NXDK HTTPS test 2!\n");
     sys_thread_new("https_client_netconn", try_https_request, NULL, DEFAULT_THREAD_STACKSIZE, DEFAULT_THREAD_PRIO);
 
     while (1) {

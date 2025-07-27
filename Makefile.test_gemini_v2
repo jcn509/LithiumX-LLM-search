@@ -2,6 +2,7 @@ XBE_TITLE = LithiumX
 GEN_XISO = $(XBE_TITLE).iso
 NXDK_SDL = y
 NXDK_NET = y
+NXDK_CXX = y
 
 GIT_COMMIT_HASH := "$(shell git describe --abbrev=7 --always)"
 
@@ -10,7 +11,7 @@ LV_CONF_PATH = "lv_conf.h"
 
 # Include my files
 SRCS += \
-    $(CURDIR)/test_gemini_v2/main.c
+    $(CURDIR)/test_gemini_v2/main.cpp
 
 CFLAGS += \
     -I$(CURDIR)/src \
@@ -30,6 +31,29 @@ CFLAGS += \
     -DDEBUG_CONSOLE \
     -DNDEBUG \
     -O2
+
+CXXFLAGS += \
+    -std=c++17 \
+    -I$(CURDIR)/src \
+    -I$(CURDIR)/src \
+    -I$(CURDIR)/src/libs/json/single_include \
+    -I$(CURDIR)/src/libs/nxdk-mbedtls/include \
+    -DLV_LVGL_H_INCLUDE_SIMPLE -DLV_CONF_PATH=$(LV_CONF_PATH) \
+    -DWIN32 \
+    -DBUILD_VERSION=\"$(GIT_COMMIT_HASH)\" \
+    -DSDL_DISABLE_JOYSTICK_INIT_DELAY \
+    -DLVGL_USE_CUSTOM_CONTROLLER_MAP \
+    -DLVGL_USE_CUSTOM_KEYBOARD_MAP \
+    -DFTP_CUSTOM_ROOT_PATH \
+    -DSNTP_SET_SYSTEM_TIME=xbox_sntp_set_time \
+    -DSNTP_SERVER_DNS=1 \
+    -Wno-implicit-function-declaration \
+    -DMEMP_NUM_NETBUF=6 -DMEMP_NUM_NETCONN=6 \
+    -DDEBUG_CONSOLE \
+    -DNDEBUG \
+    -DJSON_NO_IO \
+    -O2
+
 
 # Include shaders
 %.inl: %.ps | fp20compiler
