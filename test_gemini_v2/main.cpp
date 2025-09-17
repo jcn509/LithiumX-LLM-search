@@ -239,33 +239,27 @@ void make_gemini_request(const char* const prompt) {
     const char *host = "generativelanguage.googleapis.com";
     const char *port = "443";
 
-    // TODO: add example JSON
-    const char prompt_json_begin[] = "{\"contents\": [{\"parts\":[{\"text\": \"";
-    const char prompt_json_end[] = "\"}]}]}";
+    const nlohmann::json prompt_json = {
+        {"contents", {{{"parts", {{{"text", prompt}}}}}}}
+    };
+    const std::string prompt_json_string = prompt_json.dump();
+    const size_t total_json_size = prompt_json_string.size();
 
-    const size_t total_json_size = (sizeof(prompt_json_begin) -1) + strlen(prompt) + (sizeof(prompt_json_end) -1);
-    // Currently making the dangerous assumption that the prompt contains no characters
-    // that need to be escaped...
-    // TODO: use json library to construct the prompt
-
-    char request[1000];
     char error_buf[100];
-    int ret;
-    sprintf(
-        request,
-        "POST /v1beta/models/gemini-2.5-flash:generateContent?key=%s"                      
-        " HTTP/1.1\r\n" 
-        "Host: %s\r\n" 
-        "Connection: close\r\n"
-        "Accept: */*\r\n" 
-        "User-Agent: Mozilla/4.0 (compatible; esp8266 Lua; Windows NT 5.1)\r\n" 
-        "Content-Type: application/json\r\n"
-        "Content-Length: %i\r\n"
-        "\r\n"
-        "%s%s%s"
-        "\r\n",
-        GEMINI_API_KEY, host, total_json_size, prompt_json_begin, prompt, prompt_json_end);
 
+    const std::string https_request = \
+        "POST /v1beta/models/gemini-2.5-flash:generateContent?key="
+        GEMINI_API_KEY
+        " HTTP/1.1\r\n"
+        "Host: generativelanguage.googleapis.com\r\n"
+        "Connection: close\r\n"
+        "Accept: */*\r\n"
+        "User-Agent: Mozilla/4.0 (compatible; esp8266 Lua; Windows NT 5.1)\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: " + std::to_string(total_json_size) + "\r\n"
+        "\r\n" +
+        prompt_json_string +
+        "\r\n";
 
 
     // Initialize structures
@@ -275,6 +269,7 @@ void make_gemini_request(const char* const prompt) {
     mbedtls_entropy_init(&entropy);
     mbedtls_x509_crt_init(&cacert);
 
+    int ret;
     // Seed the RNG
     if ((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0)) != 0) {
         mbedtls_strerror(ret, error_buf, sizeof(error_buf));
@@ -341,17 +336,18 @@ void make_gemini_request(const char* const prompt) {
     }
 
     // Send HTTP request
-    size_t written = 0;
-    size_t request_len = strlen(request);
-    while (written < request_len) {
-        ret = mbedtls_ssl_write(&ssl, (const unsigned char*)request + written, request_len - written);
-        if (ret <= 0) {
-            if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
-            mbedtls_strerror(ret, error_buf, sizeof(error_buf));
+    size_t bytes_left_to_write = https_request.size();
+    const unsigned char* to_write = reinterpret_cast<const unsigned char*>(https_request.c_str());
+    while (bytes_left_to_write > 0) {
+        const int bytes_written = mbedtls_ssl_write(&ssl, to_write, bytes_left_to_write);
+        if (bytes_written <= 0) {
+            if (bytes_written == MBEDTLS_ERR_SSL_WANT_READ || bytes_written == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
+            mbedtls_strerror(bytes_written, error_buf, sizeof(error_buf));
             debugPrint("Write failed: %s\n", error_buf);
             goto exit;
         }
-        written += ret;
+        to_write += bytes_written;
+        bytes_left_to_write -= bytes_written;
     }
 
     // Read response
